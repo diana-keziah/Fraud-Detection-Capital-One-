@@ -1,0 +1,164 @@
+import random
+import pandas as pd
+import networkx as nx
+
+# ---------------------------------------
+# 1. GENERATE SYNTHETIC TRANSACTION DATA
+# ---------------------------------------
+
+random.seed(42)
+
+customers = [f"CUST{i:03d}" for i in range(1, 51)]
+accounts = [f"ACC{i:03d}" for i in range(1, 51)]
+devices = [f"DEV{i:03d}" for i in range(1, 31)]
+merchants = [f"MERCH{i:03d}" for i in range(1, 41)]
+locations = ["Charlotte", "Atlanta", "New York", "Chicago", "Miami"]
+
+transactions = []
+
+for i in range(1, 501):
+
+    customer = random.choice(customers)
+    account = random.choice(accounts)
+    device = random.choice(devices)
+    merchant = random.choice(merchants)
+    location = random.choice(locations)
+
+    amount = round(random.uniform(5, 2500), 2)
+
+    transactions.append({
+        "transaction_id": f"TXN{i:04d}",
+        "customer_id": customer,
+        "account_id": account,
+        "device_id": device,
+        "merchant_id": merchant,
+        "location": location,
+        "amount": amount
+    })
+
+df = pd.DataFrame(transactions)
+
+
+# ---------------------------------------
+# 2. CREATE GRAPH
+# ---------------------------------------
+
+G = nx.Graph()
+
+for _, row in df.iterrows():
+
+    customer = row["customer_id"]
+    account = row["account_id"]
+    device = row["device_id"]
+    merchant = row["merchant_id"]
+
+    G.add_node(customer, type="customer")
+    G.add_node(account, type="account")
+    G.add_node(device, type="device")
+    G.add_node(merchant, type="merchant")
+
+    G.add_edge(customer, account)
+    G.add_edge(account, device)
+    G.add_edge(account, merchant)
+
+
+# ---------------------------------------
+# 3. CALCULATE RISK SCORES
+# ---------------------------------------
+
+def calculate_risk(transaction, graph):
+
+    risk = 0
+
+    # Large transaction
+    if transaction["amount"] > 1500:
+        risk += 30
+
+    # Very large transaction
+    if transaction["amount"] > 2200:
+        risk += 20
+
+    # Check device connections
+    device_connections = list(
+        graph.neighbors(transaction["device_id"])
+    )
+
+    if len(device_connections) > 5:
+        risk += 25
+
+    # Check account connections
+    account_connections = list(
+        graph.neighbors(transaction["account_id"])
+    )
+
+    if len(account_connections) > 5:
+        risk += 15
+
+    return min(risk, 100)
+
+
+df["risk_score"] = df.apply(
+    lambda row: calculate_risk(row, G),
+    axis=1
+)
+
+
+# ---------------------------------------
+# 4. CLASSIFY TRANSACTIONS
+# ---------------------------------------
+
+def classify_risk(score):
+
+    if score >= 70:
+        return "HIGH"
+
+    elif score >= 40:
+        return "MEDIUM"
+
+    else:
+        return "LOW"
+
+
+df["risk_level"] = df["risk_score"].apply(classify_risk)
+
+
+# ---------------------------------------
+# 5. DISPLAY RESULTS
+# ---------------------------------------
+
+print("\n===== FRAUD DETECTION RESULTS =====\n")
+
+high_risk = df[df["risk_level"] == "HIGH"]
+
+print(f"Total Transactions: {len(df)}")
+print(f"High Risk Transactions: {len(high_risk)}")
+
+print("\nTop Suspicious Transactions:\n")
+
+print(
+    high_risk[
+        [
+            "transaction_id",
+            "account_id",
+            "device_id",
+            "merchant_id",
+            "amount",
+            "risk_score",
+            "risk_level"
+        ]
+    ]
+    .sort_values("risk_score", ascending=False)
+    .head(20)
+)
+
+
+# ---------------------------------------
+# 6. SAVE RESULTS
+# ---------------------------------------
+
+df.to_csv(
+    "fraud_detection_results.csv",
+    index=False
+)
+
+print("\nResults saved to fraud_detection_results.csv")
